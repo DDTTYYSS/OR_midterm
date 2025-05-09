@@ -10,6 +10,8 @@ def read_data(file_path):
     print(f"\nData dimensions:")
     print(f"Number of products (N): {N}")
     print(f"Number of periods (T): {T}")
+    print("\nDemand Data:")
+    print(df_demand)
     
     # Initialize arrays
     D = np.zeros([N, T])
@@ -17,9 +19,12 @@ def read_data(file_path):
     
     # Read demand data
     for i in range(N):
-        I_0[i] = df_demand.iloc[i+1, 1]
+        I_0[i] = df_demand.iloc[i+1, 1]  # Initial inventory is in column 1
         for t in range(T):
-            D[i, t] = df_demand.iloc[i+1, t+2]
+            D[i, t] = df_demand.iloc[i+1, t+2]  # Demand starts from column 2
+        print(f"\nProduct {i+1}:")
+        print(f"  Initial inventory: {I_0[i]}")
+        print(f"  Demand: {D[i]}")
     
     # Read shipping cost data
     df_shipping_cost = pd.read_excel(file_path, sheet_name="Shipping cost")
@@ -29,6 +34,8 @@ def read_data(file_path):
     print("\nDataFrame shapes:")
     print(f"Shipping cost shape: {df_shipping_cost.shape}")
     print(f"Inventory cost shape: {df_inventory_cost.shape}")
+    print("\nInventory Cost Data:")
+    print(df_inventory_cost)
     
     # Initialize cost parameters
     C = {
@@ -39,22 +46,24 @@ def read_data(file_path):
     V = np.zeros([N])  # Volume per unit
     V_C = 30  # Container volume capacity
     
-    # Print inventory cost data for debugging
-    print("\nInventory Cost Data:")
-    print(df_inventory_cost)
-    
+    # Read costs and volumes
     for i in range(N):
         try:
-            C["P"][i] = float(df_inventory_cost.iloc[i+1, 2])  # Changed from i to i+1 to skip header
-            V[i] = float(df_shipping_cost.iloc[i, 3])
-            # Only set air freight cost
+            # Note: using i instead of i+1 since we're reading from row i in the cost data
+            C["P"][i] = float(df_inventory_cost.iloc[i, 2])  # Unit cost from inventory cost sheet
+            V[i] = float(df_shipping_cost.iloc[i, 3])  # Volume from shipping cost sheet
             C["V"][i, 1] = float(df_shipping_cost.iloc[i, 2])  # Air freight cost
-            # Ocean freight cost will be calculated based on volume ratio
-            C["V"][i, 0] = (V[i] / V_C) * C["C"]  # Cost per unit for ocean based on volume ratio
+            C["V"][i, 0] = (V[i] / V_C) * C["C"]  # Ocean cost per unit based on volume ratio
             
-            print(f"Product {i+1} purchasing cost: {C['P'][i]}")
+            print(f"Product {i+1}:")
+            print(f"  Purchasing cost: {C['P'][i]}")
+            print(f"  Volume: {V[i]}")
+            print(f"  Air freight cost: {C['V'][i, 1]}")
+            print(f"  Ocean freight cost per unit: {C['V'][i, 0]}")
         except Exception as e:
             print(f"Error reading data for product {i+1}: {e}")
+            print(f"Current row in inventory cost data: {df_inventory_cost.iloc[i]}")
+            print(f"Current row in shipping cost data: {df_shipping_cost.iloc[i]}")
             raise
     
     lead_times = {"ocean": 3, "air": 1}  # Lead times in months
@@ -62,6 +71,8 @@ def read_data(file_path):
     # Read in-transit inventory data
     df_transit = pd.read_excel(file_path, sheet_name="In-transit")
     print(f"\nIn-transit data shape: {df_transit.shape}")
+    print("\nIn-transit Data:")
+    print(df_transit)
     
     in_transit = {
         "march": np.zeros([N]),  # Arriving in March
@@ -71,17 +82,39 @@ def read_data(file_path):
     # Read in-transit amounts for each product
     for i in range(N):
         try:
-            # Skip the header row and read the actual data
+            # Skip the header row by using i+1
             march_value = df_transit.iloc[i+1, 1] if pd.notna(df_transit.iloc[i+1, 1]) else 0
             april_value = df_transit.iloc[i+1, 2] if pd.notna(df_transit.iloc[i+1, 2]) else 0
             
-            in_transit["march"][i] = float(march_value)
-            in_transit["april"][i] = float(april_value)
+            # Convert to float, handling any non-numeric values
+            try:
+                in_transit["march"][i] = float(march_value)
+            except (ValueError, TypeError):
+                print(f"Warning: Non-numeric value '{march_value}' for March in-transit, product {i+1}. Using 0.")
+                in_transit["march"][i] = 0
+                
+            try:
+                in_transit["april"][i] = float(april_value)
+            except (ValueError, TypeError):
+                print(f"Warning: Non-numeric value '{april_value}' for April in-transit, product {i+1}. Using 0.")
+                in_transit["april"][i] = 0
             
             print(f"Product {i+1} in-transit: March={in_transit['march'][i]}, April={in_transit['april'][i]}")
         except Exception as e:
             print(f"Error reading in-transit data for product {i+1}: {e}")
+            print(f"Current row in transit data: {df_transit.iloc[i+1]}")
             raise
+    
+    # Print final data summary
+    print("\nFinal Data Summary:")
+    for i in range(N):
+        print(f"\nProduct {i+1}:")
+        print(f"  Initial inventory: {I_0[i]}")
+        print(f"  Demand: {D[i]}")
+        print(f"  Purchase cost: {C['P'][i]}")
+        print(f"  Volume: {V[i]}")
+        print(f"  Air cost: {C['V'][i, 1]}")
+        print(f"  Ocean cost per unit: {C['V'][i, 0]}")
     
     return N, T, J, D, I_0, C, V, V_C, lead_times, in_transit
 
@@ -104,7 +137,6 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
             # Calculate what will arrive this period from previous orders
             arriving_ocean = 0
             arriving_air = 0
-            in_transit_arriving = 0
             
             # Check for ocean shipments arriving
             if t >= lead_times["ocean"]:
@@ -114,22 +146,11 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
             if t >= lead_times["air"]:
                 arriving_air = x[i, 1, t - lead_times["air"]]
             
-            # Add in-transit inventory arriving
-            if t == 2:  # March (t=2 is the third period)
-                in_transit_arriving = in_transit["march"][i]
-            elif t == 3:  # April (t=3 is the fourth period)
-                in_transit_arriving = in_transit["april"][i]
-            
             # Calculate current inventory before demand
             if t == 0:
-                current_inventory = I_0[i] + arriving_ocean + arriving_air + in_transit_arriving
+                current_inventory = I_0[i] + arriving_ocean + arriving_air
             else:
-                current_inventory = inventory[i, t-1] + arriving_ocean + arriving_air + in_transit_arriving
-            
-            print(f"\nPeriod {t+1}:")
-            print(f"Current inventory before demand: {current_inventory}")
-            if in_transit_arriving > 0:
-                print(f"Including in-transit arrival: {in_transit_arriving}")
+                current_inventory = inventory[i, t-1] + arriving_ocean + arriving_air
             
             # Calculate required quantity to prevent negative inventory
             required_qty = D[i, t]  # We need at least enough for current period's demand
@@ -138,7 +159,9 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
                 # We need to order the difference to prevent negative inventory
                 order_qty = required_qty - current_inventory
                 
+                print(f"\nPeriod {t+1}:")
                 print(f"Demand: {D[i, t]}")
+                print(f"Current inventory before demand: {current_inventory}")
                 print(f"Need to order: {order_qty}")
                 
                 # Calculate order costs for both methods
@@ -174,8 +197,17 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
                         print(f"Must use air shipping due to lead time, order in period {air_order_time + 1}")
             
             # Update ending inventory after demand
-            inventory[i, t] = max(0, current_inventory - D[i, t])  # Ensure non-negative inventory
+            # Add in-transit inventory for March (t=2) and April (t=3)
+            in_transit_arriving = 0
+            if t == 2:  # March
+                in_transit_arriving = in_transit["march"][i]
+            elif t == 3:  # April
+                in_transit_arriving = in_transit["april"][i]
+            
+            inventory[i, t] = max(0, current_inventory - D[i, t] + in_transit_arriving)  # Add in-transit to ending inventory
             print(f"Ending inventory for period {t+1}: {inventory[i, t]}")
+            if in_transit_arriving > 0:
+                print(f"Including in-transit arrival for period {t+1}: {in_transit_arriving}")
     
     # Calculate containers needed for each period
     for t in range(T):
