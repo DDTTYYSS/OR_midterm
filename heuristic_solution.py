@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import os
+from datetime import datetime
 
 def read_data(file_path):
     # Read the Excel file from the 'Demand' sheet
@@ -289,7 +291,7 @@ def calculate_total_cost(x, z, C, N, T, J, inventory, df_inventory_cost, lead_ti
     holding_costs = np.zeros(N)
     for i in range(N):
         holding_cost_rate = float(df_inventory_cost.iloc[i, 3])  # Get holding cost rate from inventory cost sheet
-        
+        print(f"Holding cost rate for product {i+1}: {holding_cost_rate}")
         # For each period, calculate holding cost for inventory excluding in-transit
         for t in range(T):
             # Calculate actual inventory excluding in-transit
@@ -330,20 +332,25 @@ def calculate_total_cost(x, z, C, N, T, J, inventory, df_inventory_cost, lead_ti
     
     # Calculate fixed costs (setup costs) for each order
     fixed_costs = np.zeros(N)
+    ocean_fixed_cost = 0
+    for t in range(T):
+        # For ocean shipping, check if any product uses it in this period
+        if any(x[i, 0, t] > 0 for i in range(N)):
+            ocean_fixed_cost += 50  # $50 per period where ocean shipping is used
+    
     for i in range(N):
-        # Fixed costs for each shipping method
+        # Fixed costs for express and air shipping methods (per product)
         express_orders = sum(1 for t in range(T) if x[i, 2, t] > 0) * 100  # $100 per express order
         air_orders = sum(1 for t in range(T) if x[i, 1, t] > 0) * 80      # $80 per air freight order
-        ocean_orders = sum(1 for t in range(T) if x[i, 0, t] > 0) * 50    # $50 per ocean freight order
-        fixed_costs[i] = express_orders + air_orders + ocean_orders
+        fixed_costs[i] = express_orders + air_orders
         print(f"\nProduct {i+1} fixed cost:")
         print(f"  Express orders: {sum(1 for t in range(T) if x[i, 2, t] > 0)} × $100")
         print(f"  Air freight orders: {sum(1 for t in range(T) if x[i, 1, t] > 0)} × $80")
-        print(f"  Ocean freight orders: {sum(1 for t in range(T) if x[i, 0, t] > 0)} × $50")
-        print(f"  Total fixed cost: {fixed_costs[i]}")
+        print(f"  Total fixed cost for product: {fixed_costs[i]}")
     
-    total_fixed_cost = sum(fixed_costs)
-    print(f"\nTotal fixed cost: {total_fixed_cost}")
+    total_fixed_cost = sum(fixed_costs) + ocean_fixed_cost
+    print(f"\nOcean shipping fixed cost (across all products): {ocean_fixed_cost}")
+    print(f"Total fixed cost: {total_fixed_cost}")
     
     # Calculate total cost
     total_cost = (total_purchasing_cost + 
@@ -365,7 +372,19 @@ def calculate_total_cost(x, z, C, N, T, J, inventory, df_inventory_cost, lead_ti
     return total_cost, purchasing_costs, air_shipping_cost, express_shipping_cost, ocean_shipping_cost, total_holding_cost, total_fixed_cost
 
 def save_results_to_excel(x, inventory, z, C, N, T, J, total_cost, purchasing_costs, air_cost, express_cost, ocean_cost, holding_cost, fixed_cost, V, lead_times, output_file="heuristic_results.xlsx"):
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+    # Create results directory if it doesn't exist
+    results_dir = "results"
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+    
+    # Generate timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create filename with timestamp
+    filename = f"heuristic_results_{timestamp}.xlsx"
+    output_path = os.path.join(results_dir, filename)
+    
+    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
         # Calculate total quantities by product and shipping method
         total_ocean_qty = np.array([sum(x[i, 0, t] for t in range(T)) for i in range(N)])
         total_air_qty = np.array([sum(x[i, 1, t] for t in range(T)) for i in range(N)])
@@ -478,6 +497,8 @@ def save_results_to_excel(x, inventory, z, C, N, T, J, total_cost, purchasing_co
                     'Total Cost': C["C"] * z[t]
                 })
         pd.DataFrame(containers_data).to_excel(writer, sheet_name='Containers', index=False)
+    
+    print(f"\nResults have been saved to '{output_path}'")
 
 def main():
     # Read data
@@ -507,7 +528,6 @@ def main():
     # Save results to Excel
     save_results_to_excel(x, inventory, z, C, N, T, J, total_cost, purchasing_costs, 
                          air_cost, express_cost, ocean_cost, holding_cost, fixed_cost, V, lead_times)
-    print(f"\nResults have been saved to 'heuristic_results.xlsx'")
 
 if __name__ == "__main__":
     main() 
