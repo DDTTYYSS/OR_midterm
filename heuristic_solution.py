@@ -309,20 +309,24 @@ def calculate_total_cost(x, z, C, N, T, J, inventory, df_inventory_cost, lead_ti
             # Calculate actual inventory excluding in-transit
             period_inventory = inventory[i, t]  # Base ending inventory
             
-            # Add arriving shipments for this period
+            # Calculate arriving quantities in this period and add one unit of holding cost for each
             if t >= lead_times["ocean"]:
                 arriving_ocean = x[i, 0, t - lead_times["ocean"]]
+                # Add one unit of holding cost for ocean shipments arriving
+                holding_costs[i] += arriving_ocean * holding_cost_rate
             else:
                 arriving_ocean = 0
                 
             if t >= lead_times["air"]:
                 arriving_air = x[i, 1, t - lead_times["air"]]
-                arriving_express = x[i, 2, t - lead_times["express"]]  # Express has same lead time as air
+                arriving_express = x[i, 2, t - lead_times["express"]]
+                # Add one unit of holding cost for air and express shipments arriving
+                holding_costs[i] += (arriving_air + arriving_express) * holding_cost_rate
             else:
                 arriving_air = 0
                 arriving_express = 0
             
-            # Calculate holding cost for this period
+            # Calculate holding cost for this period's ending inventory
             period_cost = holding_cost_rate * period_inventory
             holding_costs[i] += period_cost
             
@@ -331,7 +335,9 @@ def calculate_total_cost(x, z, C, N, T, J, inventory, df_inventory_cost, lead_ti
             print(f"  Arriving ocean: {arriving_ocean}")
             print(f"  Arriving air: {arriving_air}")
             print(f"  Arriving express: {arriving_express}")
-            print(f"  Period holding cost: {period_cost}")
+            print(f"  Holding cost for arrivals: {(arriving_ocean + arriving_air + arriving_express) * holding_cost_rate}")
+            print(f"  Period holding cost for inventory: {period_cost}")
+            print(f"  Total period holding cost: {period_cost + (arriving_ocean + arriving_air + arriving_express) * holding_cost_rate}")
     
     total_holding_cost = sum(holding_costs)
     print(f"\nTotal holding cost: {total_holding_cost}")
@@ -339,13 +345,15 @@ def calculate_total_cost(x, z, C, N, T, J, inventory, df_inventory_cost, lead_ti
     # Calculate fixed costs (setup costs) for each order
     fixed_costs = np.zeros(N)
     for i in range(N):
-        fixed_cost_rate = float(df_inventory_cost.iloc[i, 3])  # Get fixed cost rate from inventory cost sheet
-        # Count number of orders (non-zero entries in x)
-        num_orders = sum(1 for t in range(T) for j in range(J) if x[i, j, t] > 0)
-        fixed_costs[i] = fixed_cost_rate * num_orders
+        # Fixed costs for each shipping method
+        express_orders = sum(1 for t in range(T) if x[i, 2, t] > 0) * 100  # $100 per express order
+        air_orders = sum(1 for t in range(T) if x[i, 1, t] > 0) * 80      # $80 per air freight order
+        ocean_orders = sum(1 for t in range(T) if x[i, 0, t] > 0) * 50    # $50 per ocean freight order
+        fixed_costs[i] = express_orders + air_orders + ocean_orders
         print(f"\nProduct {i+1} fixed cost:")
-        print(f"  Fixed cost rate: {fixed_cost_rate}")
-        print(f"  Number of orders: {num_orders}")
+        print(f"  Express orders: {sum(1 for t in range(T) if x[i, 2, t] > 0)} × $100")
+        print(f"  Air freight orders: {sum(1 for t in range(T) if x[i, 1, t] > 0)} × $80")
+        print(f"  Ocean freight orders: {sum(1 for t in range(T) if x[i, 0, t] > 0)} × $50")
         print(f"  Total fixed cost: {fixed_costs[i]}")
     
     total_fixed_cost = sum(fixed_costs)
