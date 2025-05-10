@@ -85,17 +85,17 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
             
             # Calculate how much we need to order
             shortage = max(0, required_qty - current_inventory)
+
+            # Determine when we need to place the order
+            ocean_order_time = max(0, t - lead_times["ocean"])
+            air_order_time = max(0, t - lead_times["air"])
+            express_order_time = max(0, t - lead_times["express"])
             
             if shortage > 0:
                 # Calculate order costs for all methods
                 ocean_cost = C["V"][i, 0] * shortage
                 air_cost = C["V"][i, 1] * shortage
                 express_cost = C["V"][i, 2] * shortage
-                
-                # Determine when we need to place the order
-                ocean_order_time = max(0, t - lead_times["ocean"])
-                air_order_time = max(0, t - lead_times["air"])
-                express_order_time = max(0, t - lead_times["express"])
                 
                 # Choose shipping method based on period requirements
                 if t == 1:  # For period 2 demand
