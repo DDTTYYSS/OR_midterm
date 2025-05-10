@@ -133,6 +133,12 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
         print(f"\nProduct {i+1}:")
         # For each period where we need to consider ordering
         for t in range(T):
+            # Calculate current inventory before demand
+            if t == 0:
+                current_inventory = I_0[i]
+            else:
+                current_inventory = inventory[i, t-1]
+            
             # Calculate what will arrive this period from previous orders
             arriving_ocean = 0
             arriving_air = 0
@@ -146,12 +152,6 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
             if t >= lead_times["air"]:
                 arriving_air = x[i, 1, t - lead_times["air"]]
                 arriving_express = x[i, 2, t - lead_times["express"]]
-            
-            # Calculate current inventory before demand
-            if t == 0:
-                current_inventory = I_0[i]
-            else:
-                current_inventory = inventory[i, t-1]
             
             # Add in-transit inventory for March (t=0) and April (t=1)
             in_transit_arriving = 0
@@ -218,20 +218,6 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
             # Calculate ending inventory (after demand)
             inventory[i, t] = max(0, current_inventory - required_qty)
             
-            # Add shipments arriving for next period's demand to current period's ending inventory
-            if t < T - 1:  # If there is a next period
-                # Calculate what will arrive next period (ordered this period)
-                next_period_ocean = x[i, 0, t] if t + lead_times["ocean"] < T else 0
-                next_period_air = x[i, 1, t] if t + lead_times["air"] < T else 0
-                next_period_express = x[i, 2, t] if t + lead_times["express"] < T else 0
-                
-                # Add these to current period's ending inventory if they arrive next period
-                if t + lead_times["ocean"] == t + 1:  # If ocean shipment arrives next period
-                    inventory[i, t] += next_period_ocean
-                if t + lead_times["air"] == t + 1:    # If air shipment arrives next period
-                    inventory[i, t] += next_period_air
-                if t + lead_times["express"] == t + 1: # If express shipment arrives next period
-                    inventory[i, t] += next_period_express
             
             print(f"Ending inventory for period {t+1}: {inventory[i, t]}")
             
