@@ -88,6 +88,9 @@ def solve_instance(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_
     # Create the Gurobi model
     model = gp.Model("InventoryManagement")
 
+    # Set error parameter
+    model.setParam('MIPGap', 0.0)
+
     # Define sets
     S_I = range(N)  # Products
     S_T = range(T)  # Time periods
@@ -110,41 +113,87 @@ def solve_instance(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_
     model.setObjective(holding_cost + purchasing_and_shipping_cost + container_cost, GRB.MINIMIZE)
 
     # Constraints
+    # Inventory balance
+    J_in_inventory = np.array([1, 2, 3, 3, 3, 3])  # Number of shipping methods available at each time period
+
     for i in S_I:
         for t in S_T:
-            in_inventory = gp.quicksum(
-                x[i, j, t - T_lead[j]] for j in S_J if t - T_lead[j] >= 0
-            )
+            # Compute the in-transit quantity arriving at time t
+            in_inventory = 0
+            for j in range(J_in_inventory[t]):
+                in_inventory += x[i, j, t - T_lead[j] + 1]
+            
+            # Add the constraint for inventory balance
             if t == 0:
-                model.addConstr(v[i, t] == I_0[i] + I_1[i] + in_inventory - D[i, t])
-            elif (t == 1):
-                model.addConstr(v[i, t] == I_0[i] + I_2[i] + in_inventory - D[i, t])
+                model.addConstr(v[i, t] == in_inventory + I_0[i] + I_1[i] - D[i, t], name=f"InvBalance_{i}_{t}")
+            elif t == 1:
+                model.addConstr(v[i, t] == v[i, t-1] + in_inventory + I_2[i] - D[i, t], name=f"InvBalance_{i}_{t}")
+                model.addConstr(v[i, t-1] >= D[i, t], name=f"Demand_{i}_{t}")
             else:
-                model.addConstr(v[i, t] == v[i, t-1] + in_inventory - D[i, t])
+                model.addConstr(v[i, t] == v[i, t-1] + in_inventory - D[i, t], name=f"InvBalance_{i}_{t}")
+                model.addConstr(v[i, t-1] >= D[i, t], name=f"Demand_{i}_{t}")
 
+    # Relate order quantity and shipping method
     M = sum(sum(D[i, t] for t in S_T) for i in S_I)  # Large number M
     for j in S_J:
         for t in S_T:
             model.addConstr(gp.quicksum(x[i, j, t] for i in S_I) <= M * y[j, t], name=f"ShippingMethod_{j}_{t}")
 
+    # Container constraint
     for t in S_T:
         model.addConstr(
-            gp.quicksum(V[i] * x[i, 2, t] for i in S_I) <= 30 * z[t]
+            gp.quicksum(V[i] * x[i, 2, t] for i in S_I) <= 30 * z[t],
+            name=f"Container_{t}"
         )
 
-    model.addConstrs((0 <= y[j, t] for j in S_J for t in S_T))
-    model.addConstrs((y[j, t] <= 1 for j in S_J for t in S_T))
-    model.addConstrs((z[t] >= 0 for t in S_T))
-    model.addConstrs((x[i, j, t] >= 0 for i in S_I for j in S_J for t in S_T))
-    model.addConstrs((v[i, t] >= 0 for i in S_I for t in S_T))
+    # Non-negativity and binary constraints
+    for i in S_I:
+        for j in S_J:
+            for t in S_T:
+                model.addConstr(x[i, j, t] >= 0, name=f"NonNeg_x_{i}_{j}_{t}")
+    for i in S_I:
+        for t in S_T:
+            model.addConstr(v[i, t] >= 0, name=f"NonNeg_v_{i}_{t}")
+    for j in S_J:
+        for t in S_T:
+            model.addConstr(y[j, t] >= 0, name=f"Binary_y_{j}_{t}")
+            model.addConstr(y[j, t] <= 1, name=f"Binary_y_upper_{j}_{t}")
+    for t in S_T:
+        model.addConstr(z[t] >= 0, name=f"NonNeg_z_{t}")
 
     # Optimize the model
     model.optimize()
 
-    # Return the objective value
+    # Print the solution
     if model.status == GRB.OPTIMAL:
+        print("\nOptimal objective value:", model.objVal)
+        print("\nOrder quantities (x_ijt):")
+        for t in S_T:
+            for i in S_I:
+                for j in S_J:
+                    if x[i, j, t].x > 0:
+                        print(f"x[{i+1},{j+1},{t+1}] = {x[i, j, t].x}")
+        
+        print("\nEnding inventory (v_it):")
+        for t in S_T:
+            for i in S_I:
+                if v[i, t].x > 0:
+                    print(f"v[{i+1},{t+1}] = {v[i, t].x}")
+        
+        print("\nShipping method usage (y_jt):")
+        for t in S_T:
+            for j in S_J:
+                if y[j, t].x > 0:
+                    print(f"y[{j+1},{t+1}] = {y[j, t].x}")
+        
+        print("\nNumber of containers (z_t):")
+        for t in S_T:
+            if z[t].x > 0:
+                print(f"z[{t+1}] = {z[t].x}")
+        
         return model.objVal
     else:
+        print("No optimal solution found.")
         return None
 
 # Main function to run the experiments
