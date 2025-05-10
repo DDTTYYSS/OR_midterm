@@ -179,14 +179,14 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
             
             # Calculate how much we need to order
             shortage = max(0, required_qty - current_inventory)
+
+            # Calculate order costs for all methods
+            ocean_cost = C["V"][i, 0] * shortage
+            air_cost = C["V"][i, 1] * shortage
+            express_cost = C["V"][i, 2] * shortage
             
             if shortage > 0:
                 print(f"Need to order: {shortage}")
-                
-                # Calculate order costs for all methods
-                ocean_cost = C["V"][i, 0] * shortage
-                air_cost = C["V"][i, 1] * shortage
-                express_cost = C["V"][i, 2] * shortage
                 
                 print(f"Ocean cost: {ocean_cost:.2f}")
                 print(f"Air cost: {air_cost:.2f}")
