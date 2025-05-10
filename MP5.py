@@ -1,3 +1,6 @@
+# import os
+# os.environ['GRB_LICENSE_FILE'] = '/Users/albert/gurobi/gurobi.lic'
+
 import os
 import sys
 import numpy as np
@@ -7,7 +10,7 @@ import time
 import csv
 import pandas as pd
 from ORMP4 import generate_instance, naive_solution, solve_instance
-from heuristic import read_data
+from heuristic_solution import read_data
 
 # Set up Gurobi environment
 try:
@@ -184,13 +187,8 @@ def calculate_heuristic_cost(x, z, C, N, T, J, inventory, C_H, C_F, lead_times):
     for i in range(N):
         total_quantity = sum(x[i, j, t] for j in range(J) for t in range(T))
         purchasing_costs[i] = C["P"][i] * total_quantity
-        print(f"\nProduct {i+1} cost calculation:")
-        print(f"  Unit cost: {C['P'][i]}")
-        print(f"  Total quantity ordered: {total_quantity}")
-        print(f"  Total purchasing cost: {purchasing_costs[i]}")
     
     total_purchasing_cost = sum(purchasing_costs)
-    print(f"\nTotal purchasing cost: {total_purchasing_cost}")
     
     # Calculate shipping costs
     air_shipping_cost = 0
@@ -200,13 +198,10 @@ def calculate_heuristic_cost(x, z, C, N, T, J, inventory, C_H, C_F, lead_times):
             air_shipping_cost += C["V"][i, 1] * x[i, 1, t]  # Regular air freight
             express_shipping_cost += C["V"][i, 2] * x[i, 2, t]  # Express shipping
     
-    print(f"Total air shipping cost: {air_shipping_cost}")
-    print(f"Total express shipping cost: {express_shipping_cost}")
-    
     # Calculate ocean shipping cost (based on containers needed)
     ocean_shipping_cost = sum(C["C"] * z[t] for t in range(T))
-    print(f"Total ocean shipping cost: {ocean_shipping_cost}")
-    
+
+    #############################################
     # Calculate holding cost for each product and period
     holding_costs = np.zeros(N)
     for i in range(N):
@@ -249,30 +244,26 @@ def calculate_heuristic_cost(x, z, C, N, T, J, inventory, C_H, C_F, lead_times):
     
     total_holding_cost = sum(holding_costs)
     print(f"\nTotal holding cost: {total_holding_cost}")
+    ######################################
     
     # Calculate fixed costs for each order
-    fixed_costs = np.zeros(N)
-    ocean_fixed_cost = 0
+    fixed_cost = 0
     
-    # For ocean shipping, check if any product uses it in this period
+    # Check each period for each shipping method
     for t in range(T):
+        # For ocean shipping
         if any(x[i, 0, t] > 0 for i in range(N)):
-            ocean_fixed_cost += C_F[2]  # $50 per period where ocean shipping is used
-            print(f"Period {t+1}: Added ocean fixed cost of {C_F[2]}")
+            fixed_cost += C_F[2]  # Ocean freight fixed cost per period
+        
+        # For air shipping
+        if any(x[i, 1, t] > 0 for i in range(N)):
+            fixed_cost += C_F[1]  # Air freight fixed cost per period
+            
+        # For express shipping
+        if any(x[i, 2, t] > 0 for i in range(N)):
+            fixed_cost += C_F[0]  # Express shipping fixed cost per period
     
-    for i in range(N):
-        # Fixed costs for express and air shipping methods (per product)
-        express_orders = sum(1 for t in range(T) if x[i, 2, t] > 0) * C_F[0]  # $100 per express order
-        air_orders = sum(1 for t in range(T) if x[i, 1, t] > 0) * C_F[1]      # $80 per air freight order
-        fixed_costs[i] = express_orders + air_orders
-        print(f"\nProduct {i+1} fixed cost:")
-        print(f"  Express orders: {sum(1 for t in range(T) if x[i, 2, t] > 0)} × ${C_F[0]}")
-        print(f"  Air freight orders: {sum(1 for t in range(T) if x[i, 1, t] > 0)} × ${C_F[1]}")
-        print(f"  Total fixed cost for product: {fixed_costs[i]}")
-    
-    total_fixed_cost = sum(fixed_costs) + ocean_fixed_cost
-    print(f"\nOcean shipping fixed cost (across all products): {ocean_fixed_cost}")
-    print(f"Total fixed cost: {total_fixed_cost}")
+    total_fixed_cost = fixed_cost
     
     # Calculate total cost
     total_cost = (total_purchasing_cost + 
@@ -281,15 +272,6 @@ def calculate_heuristic_cost(x, z, C, N, T, J, inventory, C_H, C_F, lead_times):
                  ocean_shipping_cost + 
                  total_holding_cost + 
                  total_fixed_cost)
-    
-    print("\nCost Summary:")
-    print(f"Purchasing Cost: {total_purchasing_cost:.2f}")
-    print(f"Air Shipping Cost: {air_shipping_cost:.2f}")
-    print(f"Express Shipping Cost: {express_shipping_cost:.2f}")
-    print(f"Ocean Shipping Cost: {ocean_shipping_cost:.2f}")
-    print(f"Holding Cost: {total_holding_cost:.2f}")
-    print(f"Fixed Cost: {total_fixed_cost:.2f}")
-    print(f"Total Cost: {total_cost:.2f}")
     
     return total_cost
 
@@ -318,7 +300,7 @@ def run_experiment():
         C_H = np.array([float(df_inventory_cost.iloc[i, 3]) for i in range(N)])  # Holding costs
         
         # Fixed costs for ocean, air, express
-        C_F = np.array([100, 80, 50])
+        C_F = np.array([50, 80, 100])
         
         # Lead times
         T_lead = np.array([lead_times["express"], lead_times["air"], lead_times["ocean"]])
