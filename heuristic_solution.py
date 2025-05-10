@@ -223,30 +223,7 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
             
             print(f"Ending inventory for period {t+1}: {inventory[i, t]}")
             
-            # Look ahead to see if we need to order for future periods
-            if t < T - lead_times["ocean"]:  # Only look ahead if we can still use ocean shipping
-                future_demand = sum(D[i, t+lead_times["ocean"]:min(t+lead_times["ocean"]+2, T)])
-                future_inventory = inventory[i, t]
-                
-                # Calculate future arriving shipments
-                future_arriving = sum(x[i, 0, max(0, t-lead_times["ocean"]+1):t+1]) + \
-                                sum(x[i, 1, max(0, t-lead_times["air"]+1):t+1]) + \
-                                sum(x[i, 2, max(0, t-lead_times["express"]+1):t+1])
-                
-                future_shortage = max(0, future_demand - (future_inventory + future_arriving))
-                
-                if future_shortage > 0:
-                    print(f"Looking ahead: Need to order {future_shortage} for future periods")
-                    if ocean_cost <= air_cost and ocean_cost <= express_cost:
-                        x[i, 0, t] += future_shortage
-                        print(f"Ordering additional {future_shortage} by ocean for future periods")
-                    elif air_cost <= express_cost:
-                        x[i, 1, t] += future_shortage
-                        print(f"Ordering additional {future_shortage} by air for future periods")
-                    else:
-                        x[i, 2, t] += future_shortage
-                        print(f"Ordering additional {future_shortage} by express for future periods")
-    
+            
     # Calculate containers needed for each period
     for t in range(T):
         total_volume = sum(V[i] * x[i, 0, t] for i in range(N))
