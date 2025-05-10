@@ -8,6 +8,7 @@ import time
 import csv
 import pandas as pd
 from ORMP4 import generate_instance, naive_solution, solve_instance
+from heuristic import read_data
 
 def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead):
     """
@@ -76,9 +77,9 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
             
             # Add in-transit inventory for March (t=0) and April (t=1)
             in_transit_arriving = 0
-            if t == 0:  # March
+            if t == 1:  # March
                 in_transit_arriving = in_transit["march"][i]
-            elif t == 1:  # April
+            elif t == 2:  # April
                 in_transit_arriving = in_transit["april"][i]
             
             # Add all arriving shipments to current inventory
@@ -100,9 +101,9 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
             shortage = max(0, required_qty - current_inventory)
             
             # Calculate order costs for all methods
-            ocean_cost = C["V"][i, 0] * shortage
-            air_cost = C["V"][i, 1] * shortage
-            express_cost = C["V"][i, 2] * shortage
+            ocean_cost = C["V"][i, 0] 
+            air_cost = C["V"][i, 1] 
+            express_cost = C["V"][i, 2] 
             
             if shortage > 0:
                 print(f"Need to order: {shortage}")
@@ -142,7 +143,7 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
     # Calculate containers needed for each period
     for t in range(T):
         total_volume = sum(V[i] * x[i, 0, t] for i in range(N))
-        if total_volume > 0:
+        if total_volume > 0: 
             z[t] = np.ceil(total_volume / 30)  # Container volume capacity is 30
             print(f"\nPeriod {t+1} ocean shipping:")
             print(f"Total volume: {total_volume:.2f}")
@@ -254,98 +255,161 @@ def run_experiment():
     """
     Run the experiment for all scenarios
     """
-    scenarios = [
-        ("medium", "medium", "medium"),
-        ("small", "medium", "medium"),
-        ("large", "medium", "medium"),
-        ("medium", "low", "medium"),
-        ("medium", "high", "medium"),
-        ("medium", "medium", "low"),
-        ("medium", "medium", "high"),
-    ]
+    # scenarios = [
+    #     ("medium", "medium", "medium"),
+    #     ("small", "medium", "medium"),
+    #     ("large", "medium", "medium"),
+    #     ("medium", "low", "medium"),
+    #     ("medium", "high", "medium"),
+    #     ("medium", "medium", "low"),
+    #     ("medium", "medium", "high"),
+    # ]
 
     results = []
     summary_stats = []
 
-    for scenario_id, (scale, container_cost, holding_cost) in enumerate(scenarios, 1):
-        print(f"\nRunning Scenario {scenario_id}: Scale={scale}, Container Cost={container_cost}, Holding Cost={holding_cost}")
+    # Add Excel data test group
+    print("\nRunning Excel Data Test Group")
+    try:
+        # Read Excel data
+        file_path = "OR113-2_midtermProject_data.xlsx"
+        N, T, J, D, I_0, C, V, V_C, lead_times, in_transit = read_data(file_path)
         
-        # Variables to store performance metrics
-        naive_gaps = []
-        heuristic_gaps = []
-        naive_times = []
-        heuristic_times = []
-        optimal_times = []
+        # Convert Excel data format to match synthetic data format
+        C_P = C["P"]
+        C_V1 = C["V"][:, 1]  # Air freight costs
+        C_V2 = C["V"][:, 2]  # Express shipping costs
+        C_C = C["C"]  # Container cost
+        C_H = np.array([float(pd.read_excel(file_path, sheet_name="Inventory cost").iloc[i, 3]) for i in range(N)])  # Holding costs
+        C_F = np.array([50, 80, 100])  # Fixed costs for ocean, air, express
+        T_lead = np.array([lead_times["express"], lead_times["air"], lead_times["ocean"]])
+        I_1 = in_transit["march"]
+        I_2 = in_transit["april"]
+
+        # Time and solve using relaxed optimization model
+        start_time = time.time()
+        optimal_cost = solve_instance(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead)
+        optimal_time = time.time() - start_time
+
+        # Time and solve using naive solution
+        start_time = time.time()
+        naive_cost = naive_solution(N, T, D, C_P, C_V1, I_0, I_1, I_2, C_H, C_F)
+        naive_time = time.time() - start_time
+
+        # Time and solve using our heuristic solution
+        start_time = time.time()
+        heuristic_cost, x, inventory, z = adapt_heuristic_for_synthetic_data(
+            N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead
+        )
+        heuristic_time = time.time() - start_time
+
+        # Calculate optimality gaps
+        if optimal_cost is not None:
+            naive_gap = (naive_cost - optimal_cost) / optimal_cost * 100
+            heuristic_gap = (heuristic_cost - optimal_cost) / optimal_cost * 100
+            
+            results.append((
+                "excel", 1, 
+                optimal_cost, naive_cost, heuristic_cost,
+                optimal_time, naive_time, heuristic_time,
+                naive_gap, heuristic_gap
+            ))
+            
+            print(f"Excel Data Test Results:")
+            print(f"  Optimal={optimal_cost:.2f}, Naive={naive_cost:.2f}, Heuristic={heuristic_cost:.2f}")
+            print(f"  Times (s): Optimal={optimal_time:.3f}, Naive={naive_time:.3f}, Heuristic={heuristic_time:.3f}")
+            print(f"  Gaps (%): Naive={naive_gap:.2f}, Heuristic={heuristic_gap:.2f}")
+
+            summary_stats.append((
+                "excel", "excel", "excel", "excel",
+                naive_gap, 0, heuristic_gap, 0,
+                optimal_time, 0, naive_time, 0, heuristic_time, 0
+            ))
+        else:
+            print("Excel Data Test: Optimization failed.")
+    except Exception as e:
+        print(f"Error in Excel data test: {e}")
+
+    # # Run synthetic data scenarios
+    # for scenario_id, (scale, container_cost, holding_cost) in enumerate(scenarios, 1):
+    #     print(f"\nRunning Scenario {scenario_id}: Scale={scale}, Container Cost={container_cost}, Holding Cost={holding_cost}")
         
-        for instance_id in range(30):
-            # Generate random instance
-            instance = generate_instance(scale, container_cost, holding_cost)
-            N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead = instance
+    #     # Variables to store performance metrics
+    #     naive_gaps = []
+    #     heuristic_gaps = []
+    #     naive_times = []
+    #     heuristic_times = []
+    #     optimal_times = []
+        
+    #     for instance_id in range(30):
+    #         # Generate random instance
+    #         instance = generate_instance(scale, container_cost, holding_cost)
+    #         N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead = instance
 
-            # Time and solve using relaxed optimization model
-            start_time = time.time()
-            optimal_cost = solve_instance(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead)
-            optimal_time = time.time() - start_time
-            optimal_times.append(optimal_time)
+    #         # Time and solve using relaxed optimization model
+    #         start_time = time.time()
+    #         optimal_cost = solve_instance(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead)
+    #         optimal_time = time.time() - start_time
+    #         optimal_times.append(optimal_time)
 
-            # Time and solve using naive solution
-            start_time = time.time()
-            naive_cost = naive_solution(N, T, D, C_P, C_V1, I_0, I_1, I_2, C_H, C_F)
-            naive_time = time.time() - start_time
-            naive_times.append(naive_time)
+    #         # Time and solve using naive solution
+    #         start_time = time.time()
+    #         naive_cost = naive_solution(N, T, D, C_P, C_V1, I_0, I_1, I_2, C_H, C_F)
+    #         naive_time = time.time() - start_time
+    #         naive_times.append(naive_time)
 
-            # Time and solve using our heuristic solution
-            start_time = time.time()
-            heuristic_cost, x, inventory, z = adapt_heuristic_for_synthetic_data(
-                N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead
-            )
-            heuristic_time = time.time() - start_time
-            heuristic_times.append(heuristic_time)
+    #         # Time and solve using our heuristic solution
+    #         start_time = time.time()
+    #         heuristic_cost, x, inventory, z = adapt_heuristic_for_synthetic_data(
+    #             N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, V, C_C, C_H, C_F, T_lead
+    #         )
+    #         heuristic_time = time.time() - start_time
+    #         heuristic_times.append(heuristic_time)
 
-            # Calculate optimality gaps
-            if optimal_cost is not None:
-                naive_gap = (naive_cost - optimal_cost) / optimal_cost * 100
-                heuristic_gap = (heuristic_cost - optimal_cost) / optimal_cost * 100
+    #         # Calculate optimality gaps
+    #         if optimal_cost is not None:
+    #             naive_gap = (naive_cost - optimal_cost) / optimal_cost * 100
+    #             heuristic_gap = (heuristic_cost - optimal_cost) / optimal_cost * 100
                 
-                naive_gaps.append(naive_gap)
-                heuristic_gaps.append(heuristic_gap)
+    #             naive_gaps.append(naive_gap)
+    #             heuristic_gaps.append(heuristic_gap)
                 
-                results.append((
-                    scenario_id, instance_id + 1, 
-                    optimal_cost, naive_cost, heuristic_cost,
-                    optimal_time, naive_time, heuristic_time,
-                    naive_gap, heuristic_gap
-                ))
+    #             results.append((
+    #                 scenario_id, instance_id + 1, 
+    #                 optimal_cost, naive_cost, heuristic_cost,
+    #                 optimal_time, naive_time, heuristic_time,
+    #                 naive_gap, heuristic_gap
+    #             ))
                 
-                print(f"  Instance {instance_id + 1}: Optimal={optimal_cost:.2f}, Naive={naive_cost:.2f}, Heuristic={heuristic_cost:.2f}")
-                print(f"  Times (s): Optimal={optimal_time:.3f}, Naive={naive_time:.3f}, Heuristic={heuristic_time:.3f}")
-                print(f"  Gaps (%): Naive={naive_gap:.2f}, Heuristic={heuristic_gap:.2f}")
-            else:
-                print(f"  Instance {instance_id + 1}: Optimization failed.")
+    #             print(f"  Instance {instance_id + 1}: Optimal={optimal_cost:.2f}, Naive={naive_cost:.2f}, Heuristic={heuristic_cost:.2f}")
+    #             print(f"  Times (s): Optimal={optimal_time:.3f}, Naive={naive_time:.3f}, Heuristic={heuristic_time:.3f}")
+    #             print(f"  Gaps (%): Naive={naive_gap:.2f}, Heuristic={heuristic_gap:.2f}")
+    #         else:
+    #             print(f"  Instance {instance_id + 1}: Optimization failed.")
 
-        # Calculate average and standard deviation of gaps and times for this scenario
-        avg_naive_gap = np.mean(naive_gaps)
-        std_naive_gap = np.std(naive_gaps)
-        avg_heuristic_gap = np.mean(heuristic_gaps)
-        std_heuristic_gap = np.std(heuristic_gaps)
+    #     # Calculate average and standard deviation of gaps and times for this scenario
+    #     avg_naive_gap = np.mean(naive_gaps)
+    #     std_naive_gap = np.std(naive_gaps)
+    #     avg_heuristic_gap = np.mean(heuristic_gaps)
+    #     std_heuristic_gap = np.std(heuristic_gaps)
         
-        avg_optimal_time = np.mean(optimal_times)
-        std_optimal_time = np.std(optimal_times)
-        avg_naive_time = np.mean(naive_times)
-        std_naive_time = np.std(naive_times)
-        avg_heuristic_time = np.mean(heuristic_times)
-        std_heuristic_time = np.std(heuristic_times)
+    #     avg_optimal_time = np.mean(optimal_times)
+    #     std_optimal_time = np.std(optimal_times)
+    #     avg_naive_time = np.mean(naive_times)
+    #     std_naive_time = np.std(naive_times)
+    #     avg_heuristic_time = np.mean(heuristic_times)
+    #     std_heuristic_time = np.std(heuristic_times)
 
-        summary_stats.append((
-            scenario_id, scale, container_cost, holding_cost,
-            avg_naive_gap, std_naive_gap, avg_heuristic_gap, std_heuristic_gap,
-            avg_optimal_time, std_optimal_time, avg_naive_time, std_naive_time, avg_heuristic_time, std_heuristic_time
-        ))
+    #     summary_stats.append((
+    #         scenario_id, scale, container_cost, holding_cost,
+    #         avg_naive_gap, std_naive_gap, avg_heuristic_gap, std_heuristic_gap,
+    #         avg_optimal_time, std_optimal_time, avg_naive_time, std_naive_time, avg_heuristic_time, std_heuristic_time
+    #     ))
         
-        print(f"\nScenario {scenario_id} Summary:")
-        print(f"  Naive Gap: {avg_naive_gap:.2f}% (±{std_naive_gap:.2f}%)")
-        print(f"  Heuristic Gap: {avg_heuristic_gap:.2f}% (±{std_heuristic_gap:.2f}%)")
-        print(f"  Average Time (s): Optimal={avg_optimal_time:.3f}, Naive={avg_naive_time:.3f}, Heuristic={avg_heuristic_time:.3f}")
+    #     print(f"\nScenario {scenario_id} Summary:")
+    #     print(f"  Naive Gap: {avg_naive_gap:.2f}% (±{std_naive_gap:.2f}%)")
+    #     print(f"  Heuristic Gap: {avg_heuristic_gap:.2f}% (±{std_heuristic_gap:.2f}%)")
+    #     print(f"  Average Time (s): Optimal={avg_optimal_time:.3f}, Naive={avg_naive_time:.3f}, Heuristic={avg_heuristic_time:.3f}")
 
     # Export results to CSV
     with open("detailed_results.csv", "w", newline="") as csvfile:
