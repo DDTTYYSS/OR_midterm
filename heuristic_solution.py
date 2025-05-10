@@ -69,7 +69,7 @@ def read_data(file_path):
             print(f"Current row in shipping cost data: {df_shipping_cost.iloc[i]}")
             raise
     
-    lead_times = {"ocean": 3, "air": 1, "express": 1}  # Lead times in months
+    lead_times = {"ocean": 3, "air": 2, "express": 1}  # Lead times in months
     
     # Read in-transit inventory data
     df_transit = pd.read_excel(file_path, sheet_name="In-transit")
@@ -153,6 +153,7 @@ def heuristic_solution(N, T, J, D, I_0, C, V, V_C, lead_times, in_transit):
             # Check for air shipments arriving (ordered 1 period ago)
             if t >= lead_times["air"]:
                 arriving_air = x[i, 1, t - lead_times["air"]]
+            if t >= lead_times["express"]:
                 arriving_express = x[i, 2, t - lead_times["express"]]
             
             # Add in-transit inventory for March (t=0) and April (t=1)
@@ -274,22 +275,27 @@ def calculate_total_cost(x, z, C, N, T, J, inventory, df_inventory_cost, lead_ti
             # Calculate actual inventory excluding in-transit
             period_inventory = inventory[i, t]  # Base ending inventory
             
+            arriving_ocean = 0
+            arriving_air = 0
+            arriving_express = 0
+            
             # Calculate arriving quantities in this period and add one unit of holding cost for each
             if t >= lead_times["ocean"]:
                 arriving_ocean = x[i, 0, t - lead_times["ocean"]]
                 # Add one unit of holding cost for ocean shipments arriving
                 holding_costs[i] += arriving_ocean * holding_cost_rate
-            else:
-                arriving_ocean = 0
+            
                 
             if t >= lead_times["air"]:
                 arriving_air = x[i, 1, t - lead_times["air"]]
+                holding_costs[i] += arriving_air * holding_cost_rate
+            
+
+            if t >= lead_times["express"]:
                 arriving_express = x[i, 2, t - lead_times["express"]]
                 # Add one unit of holding cost for air and express shipments arriving
-                holding_costs[i] += (arriving_air + arriving_express) * holding_cost_rate
-            else:
-                arriving_air = 0
-                arriving_express = 0
+                holding_costs[i] += arriving_express * holding_cost_rate
+           
             
             # Calculate holding cost for this period's ending inventory
             period_cost = holding_cost_rate * period_inventory
