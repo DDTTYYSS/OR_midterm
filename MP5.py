@@ -1,5 +1,5 @@
-import os
-os.environ['GRB_LICENSE_FILE'] = '/Users/albert/gurobi/gurobi.lic'
+# import os
+# os.environ['GRB_LICENSE_FILE'] = '/Users/albert/gurobi/gurobi.lic'
 
 import numpy as np
 import gurobipy as gp
