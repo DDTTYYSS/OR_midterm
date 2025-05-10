@@ -194,15 +194,23 @@ def calculate_heuristic_cost(x, z, C, N, T, J, inventory, C_H, C_F, lead_times):
     ######################################
     
     # Calculate fixed costs for each order
-    fixed_costs = np.zeros(N)
-    for i in range(N):
-        # Fixed costs for each shipping method
-        express_orders = sum(1 for t in range(T) if x[i, 2, t] > 0) * C_F[0]  # Express
-        air_orders = sum(1 for t in range(T) if x[i, 1, t] > 0) * C_F[1]      # Air freight
-        ocean_orders = sum(1 for t in range(T) if x[i, 0, t] > 0) * C_F[2]    # Ocean freight
-        fixed_costs[i] = express_orders + air_orders + ocean_orders
+    fixed_cost = 0
     
-    total_fixed_cost = sum(fixed_costs)
+    # Check each period for each shipping method
+    for t in range(T):
+        # For ocean shipping
+        if any(x[i, 0, t] > 0 for i in range(N)):
+            fixed_cost += C_F[2]  # Ocean freight fixed cost per period
+        
+        # For air shipping
+        if any(x[i, 1, t] > 0 for i in range(N)):
+            fixed_cost += C_F[1]  # Air freight fixed cost per period
+            
+        # For express shipping
+        if any(x[i, 2, t] > 0 for i in range(N)):
+            fixed_cost += C_F[0]  # Express shipping fixed cost per period
+    
+    total_fixed_cost = fixed_cost
     
     # Calculate total cost
     total_cost = (total_purchasing_cost + 
