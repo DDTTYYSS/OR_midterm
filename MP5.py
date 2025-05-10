@@ -1,3 +1,6 @@
+import os
+os.environ['GRB_LICENSE_FILE'] = '/Users/albert/gurobi/gurobi.lic'
+
 import numpy as np
 import gurobipy as gp
 from gurobipy import GRB
@@ -47,8 +50,15 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
     
     # For each product
     for i in range(N):
+        print(f"\nProduct {i+1}:")
         # For each period where we need to consider ordering
         for t in range(T):
+            # Calculate current inventory before demand
+            if t == 0:
+                current_inventory = I_0[i]
+            else:
+                current_inventory = inventory[i, t-1]
+            
             # Calculate what will arrive this period from previous orders
             arriving_ocean = 0
             arriving_air = 0
@@ -61,14 +71,8 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
             # Check for air shipments arriving (ordered 1 period ago)
             if t >= lead_times["air"]:
                 arriving_air = x[i, 1, t - lead_times["air"]]
+            if t >= lead_times["express"]:
                 arriving_express = x[i, 2, t - lead_times["express"]]
-            
-            
-            # Calculate current inventory before demand
-            if t == 0:
-                current_inventory = I_0[i]
-            else:
-                current_inventory = inventory[i, t-1]
             
             # Add in-transit inventory for March (t=0) and April (t=1)
             in_transit_arriving = 0
@@ -80,66 +84,69 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
             # Add all arriving shipments to current inventory
             current_inventory += arriving_ocean + arriving_air + arriving_express + in_transit_arriving
             
+            print(f"\nPeriod {t+1}:")
+            print(f"Starting inventory: {current_inventory}")
+            print(f"Arriving ocean: {arriving_ocean}")
+            print(f"Arriving air: {arriving_air}")
+            print(f"Arriving express: {arriving_express}")
+            print(f"In-transit arriving: {in_transit_arriving}")
+            print(f"Total inventory before demand: {current_inventory}")
+            print(f"Demand: {D[i, t]}")
+            
             # Calculate required quantity
             required_qty = D[i, t]
             
             # Calculate how much we need to order
             shortage = max(0, required_qty - current_inventory)
-
-            # Determine when we need to place the order
-            ocean_order_time = max(0, t - lead_times["ocean"])
-            air_order_time = max(0, t - lead_times["air"])
-            express_order_time = max(0, t - lead_times["express"])
+            
+            # Calculate order costs for all methods
+            ocean_cost = C["V"][i, 0] * shortage
+            air_cost = C["V"][i, 1] * shortage
+            express_cost = C["V"][i, 2] * shortage
             
             if shortage > 0:
-                # Calculate order costs for all methods
-                ocean_cost = C["V"][i, 0] * shortage
-                air_cost = C["V"][i, 1] * shortage
-                express_cost = C["V"][i, 2] * shortage
+                print(f"Need to order: {shortage}")
+                print(f"Ocean cost: {ocean_cost:.2f}")
+                print(f"Air cost: {air_cost:.2f}")
+                print(f"Express cost: {express_cost:.2f}")
+                
+                # Determine when we need to place the order
+                ocean_order_time = max(0, t - lead_times["ocean"])
+                air_order_time = max(0, t - lead_times["air"])
+                express_order_time = max(0, t - lead_times["express"])
                 
                 # Choose shipping method based on period requirements
                 if t == 1:  # For period 2 demand
                     # Must use express shipping
                     x[i, 2, express_order_time] += shortage
+                    print(f"Period 2 demand: Must use express shipping, order in period {express_order_time + 1}")
                 elif t == 2:  # For period 3 demand
                     # Must use air shipping
                     x[i, 1, air_order_time] += shortage
+                    print(f"Period 3 demand: Must use air shipping, order in period {air_order_time + 1}")
                 else:  # For other periods
                     if ocean_cost <= air_cost and ocean_cost <= express_cost:
                         x[i, 0, ocean_order_time] += shortage
+                        print(f"Using ocean shipping, order in period {ocean_order_time + 1}")
                     elif air_cost <= express_cost:
                         x[i, 1, air_order_time] += shortage
+                        print(f"Using air shipping, order in period {air_order_time + 1}")
                     else:
                         x[i, 2, express_order_time] += shortage
+                        print(f"Using express shipping, order in period {express_order_time + 1}")
             
             # Calculate ending inventory (after demand)
             inventory[i, t] = max(0, current_inventory - required_qty)
-            
-            # Look ahead to see if we need to order for future periods
-            if t < T - lead_times["ocean"]:  # Only look ahead if we can still use ocean shipping
-                future_demand = sum(D[i, t+lead_times["ocean"]:min(t+lead_times["ocean"]+2, T)])
-                future_inventory = inventory[i, t]
-                
-                # Calculate future arriving shipments
-                future_arriving = sum(x[i, 0, max(0, t-lead_times["ocean"]+1):t+1]) + \
-                                 sum(x[i, 1, max(0, t-lead_times["air"]+1):t+1]) + \
-                                 sum(x[i, 2, max(0, t-lead_times["express"]+1):t+1])
-                
-                future_shortage = max(0, future_demand - (future_inventory + future_arriving))
-                
-                if future_shortage > 0:
-                    if ocean_cost <= air_cost and ocean_cost <= express_cost:
-                        x[i, 0, t] += future_shortage
-                    elif air_cost <= express_cost:
-                        x[i, 1, t] += future_shortage
-                    else:
-                        x[i, 2, t] += future_shortage
+            print(f"Ending inventory for period {t+1}: {inventory[i, t]}")
     
     # Calculate containers needed for each period
     for t in range(T):
         total_volume = sum(V[i] * x[i, 0, t] for i in range(N))
         if total_volume > 0:
             z[t] = np.ceil(total_volume / 30)  # Container volume capacity is 30
+            print(f"\nPeriod {t+1} ocean shipping:")
+            print(f"Total volume: {total_volume:.2f}")
+            print(f"Containers needed: {z[t]:.0f}")
     
     # Calculate total cost
     total_cost = calculate_heuristic_cost(x, z, C, N, T, J, inventory, C_H, C_F, lead_times)
@@ -173,24 +180,45 @@ def calculate_heuristic_cost(x, z, C, N, T, J, inventory, C_H, C_F, lead_times):
     # Calculate holding cost for each product and period
     holding_costs = np.zeros(N)
     for i in range(N):
-        # For each period, calculate holding cost for inventory
+        holding_cost_rate = C_H[i]  # Get holding cost rate from C_H array
+        print(f"Holding cost rate for product {i+1}: {holding_cost_rate}")
+        # For each period, calculate holding cost for inventory excluding in-transit
         for t in range(T):
-            # Calculate holding cost for this period's ending inventory
-            holding_costs[i] += C_H[i] * inventory[i, t]
+            # Calculate actual inventory excluding in-transit
+            period_inventory = inventory[i, t]  # Base ending inventory
             
-            # Calculate arriving quantities in this period and add holding cost
+            # Calculate arriving quantities in this period and add one unit of holding cost for each
             if t >= lead_times["ocean"]:
                 arriving_ocean = x[i, 0, t - lead_times["ocean"]]
                 # Add one unit of holding cost for ocean shipments arriving
-                holding_costs[i] += arriving_ocean * C_H[i]
+                holding_costs[i] += arriving_ocean * holding_cost_rate
+            else:
+                arriving_ocean = 0
                 
             if t >= lead_times["air"]:
                 arriving_air = x[i, 1, t - lead_times["air"]]
                 arriving_express = x[i, 2, t - lead_times["express"]]
                 # Add one unit of holding cost for air and express shipments arriving
-                holding_costs[i] += (arriving_air + arriving_express) * C_H[i]
+                holding_costs[i] += (arriving_air + arriving_express) * holding_cost_rate
+            else:
+                arriving_air = 0
+                arriving_express = 0
+            
+            # Calculate holding cost for this period's ending inventory
+            period_cost = holding_cost_rate * period_inventory
+            holding_costs[i] += period_cost
+            
+            print(f"\nProduct {i+1}, Period {t+1} holding cost calculation:")
+            print(f"  Base ending inventory: {period_inventory}")
+            print(f"  Arriving ocean: {arriving_ocean}")
+            print(f"  Arriving air: {arriving_air}")
+            print(f"  Arriving express: {arriving_express}")
+            print(f"  Holding cost for arrivals: {(arriving_ocean + arriving_air + arriving_express) * holding_cost_rate}")
+            print(f"  Period holding cost for inventory: {period_cost}")
+            print(f"  Total period holding cost: {period_cost + (arriving_ocean + arriving_air + arriving_express) * holding_cost_rate}")
     
     total_holding_cost = sum(holding_costs)
+    print(f"\nTotal holding cost: {total_holding_cost}")
     ######################################
     
     # Calculate fixed costs for each order
