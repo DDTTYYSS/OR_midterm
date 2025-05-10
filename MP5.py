@@ -1,6 +1,3 @@
-# import os
-# os.environ['GRB_LICENSE_FILE'] = '/Users/albert/gurobi/gurobi.lic'
-
 import os
 import sys
 import numpy as np
@@ -10,7 +7,7 @@ import time
 import csv
 import pandas as pd
 from ORMP4 import generate_instance, naive_solution, solve_instance
-from heuristic_solution import read_data
+from heuristic import read_data
 
 # Set up Gurobi environment
 try:
