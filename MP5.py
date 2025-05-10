@@ -72,7 +72,7 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
     
     # For each product
     for i in range(N):
-        print(f"\nProduct {i+1}:")
+        # print(f"\nProduct {i+1}:")
         # For each period where we need to consider ordering
         for t in range(T):
             # Calculate current inventory before demand
@@ -106,14 +106,14 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
             # Add all arriving shipments to current inventory
             current_inventory += arriving_ocean + arriving_air + arriving_express + in_transit_arriving
             
-            print(f"\nPeriod {t+1}:")
-            print(f"Starting inventory: {current_inventory}")
-            print(f"Arriving ocean: {arriving_ocean}")
-            print(f"Arriving air: {arriving_air}")
-            print(f"Arriving express: {arriving_express}")
-            print(f"In-transit arriving: {in_transit_arriving}")
-            print(f"Total inventory before demand: {current_inventory}")
-            print(f"Demand: {D[i, t]}")
+            # print(f"\nPeriod {t+1}:")
+            # print(f"Starting inventory: {current_inventory}")
+            # print(f"Arriving ocean: {arriving_ocean}")
+            # print(f"Arriving air: {arriving_air}")
+            # print(f"Arriving express: {arriving_express}")
+            # print(f"In-transit arriving: {in_transit_arriving}")
+            # print(f"Total inventory before demand: {current_inventory}")
+            # print(f"Demand: {D[i, t]}")
             
             # Calculate required quantity
             required_qty = D[i, t]
@@ -127,10 +127,10 @@ def adapt_heuristic_for_synthetic_data(N, T, D, C_P, C_V1, C_V2, I_0, I_1, I_2, 
             express_cost = C["V"][i, 2] * shortage
             
             if shortage > 0:
-                print(f"Need to order: {shortage}")
-                print(f"Ocean cost: {ocean_cost:.2f}")
-                print(f"Air cost: {air_cost:.2f}")
-                print(f"Express cost: {express_cost:.2f}")
+                # print(f"Need to order: {shortage}")
+                # print(f"Ocean cost: {ocean_cost:.2f}")
+                # print(f"Air cost: {air_cost:.2f}")
+                # print(f"Express cost: {express_cost:.2f}")
                 
                 # Determine when we need to place the order
                 ocean_order_time = max(0, t - lead_times["ocean"])
